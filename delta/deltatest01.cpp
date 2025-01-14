@@ -46,12 +46,12 @@ DeltaKinematics::DeltaKinematics(double _btf, double _f, double _rf, double _re,
 		<< "    \tZ[V,A] = [" << setw(8) << Z_Limit.Min << ", " << setw(8) << Z_Limit.Max << "] mm\n"
 		<< endl;
 
-	cout << ">>>>\tA[V,A] = [" << setw(8) << A_Limit.Min << ", " << setw(8) << A_Limit.Max << "] ¡Æ\n"
-		<< "    \tB[V,A] = [" << setw(8) << B_Limit.Min << ", " << setw(8) << B_Limit.Max << "] ¡Æ\n"
-		<< "    \tC[V,A] = [" << setw(8) << C_Limit.Min << ", " << setw(8) << C_Limit.Max << "] ¡Æ\n"
+	cout << ">>>>\tA[V,A] = [" << setw(8) << A_Limit.Min << ", " << setw(8) << A_Limit.Max << "] Â¡Ã†\n"
+		<< "    \tB[V,A] = [" << setw(8) << B_Limit.Min << ", " << setw(8) << B_Limit.Max << "] Â¡Ã†\n"
+		<< "    \tC[V,A] = [" << setw(8) << C_Limit.Min << ", " << setw(8) << C_Limit.Max << "] Â¡Ã†\n"
 		<< endl;
 
-	cout << ">>>>\t" << "Resolution      =  ¡¾ " << Resolution << " mm" << endl << endl;
+	cout << ">>>>\t" << "Resolution      =  Â¡Â¾ " << Resolution << " mm" << endl << endl;
 
 	cout << ">>>>\t" << "Increment Mode  =  " << (IncrementMode ? "true" : "false") << " ms" << endl << endl;
 	cout << ">>>>\t" << "ETA             =  " << ETA << " ms" << endl << endl;
@@ -401,7 +401,7 @@ bool DeltaKinematics::SetIncrementMode(bool mode) {
 }
 
 /// <summary>
-/// Calculate incremental rotation: {¥Äx,¥Äy,¥Äz}, {¥Äa,¥Äb,¥Äc}
+/// Calculate incremental rotation: {Â¥Ã„x,Â¥Ã„y,Â¥Ã„z}, {Â¥Ã„a,Â¥Ã„b,Â¥Ã„c}
 /// </summary>
 void DeltaKinematics::calc_delta_xyz_abc()
 {
@@ -425,3 +425,179 @@ void DeltaKinematics::calc_delta_xyz_abc()
 double DeltaKinematics::roundoff(double number, unsigned int bits) {
 	return round(number * pow(10, bits)) / pow(10, bits);
 }
+
+
+#include <iostream>
+#include <sstream>
+#include <stack>
+#include <string>
+#include <cmath>
+#include <vector>
+#include <cctype>
+
+using namespace std;
+
+// Function to check if a string is a number
+bool isNumber(const string& str) {
+    for (char c : str) {
+        if (!isdigit(c) && c != '.' && c != '-') return false;
+    }
+    return true;
+}
+
+// Function to apply a single operator to two operands
+float applyOperator(float a, float b, const string& op, bool &isValid) {
+    if (op == "+") return a + b;
+    if (op == "-") return a - b;
+    if (op == "*") return a * b;
+    if (op == "/") {
+        if (b == 0) {
+            isValid = false;
+            return 0;
+        }
+        return a / b;
+    }
+    if (op == "**") return pow(a, b);
+    isValid = false;
+    return 0;
+}
+
+// Function to evaluate an expression without parentheses, considering operator precedence
+float evaluateSimpleExpression(vector<string>& tokens, bool &isValid) {
+    vector<float> operands;
+    vector<string> operators;
+
+    // First pass: Handle "**" (highest precedence)
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        if (tokens[i] == "**") {
+            float base = operands.back();
+            operands.pop_back();
+            float exponent = stof(tokens[++i]);
+            operands.push_back(pow(base, exponent));
+        } else if (isNumber(tokens[i])) {
+            operands.push_back(stof(tokens[i]));
+        } else {
+            operators.push_back(tokens[i]);
+        }
+    }
+
+    // Second pass: Handle "*" and "/" (next precedence)
+    vector<float> newOperands;
+    vector<string> newOperators;
+    newOperands.push_back(operands[0]);
+
+    for (size_t i = 0; i < operators.size(); ++i) {
+        if (operators[i] == "*" || operators[i] == "/") {
+            float a = newOperands.back();
+            newOperands.pop_back();
+            float b = operands[i + 1];
+            newOperands.push_back(applyOperator(a, b, operators[i], isValid));
+            if (!isValid) return 0;
+        } else {
+            newOperands.push_back(operands[i + 1]);
+            newOperators.push_back(operators[i]);
+        }
+    }
+
+    // Third pass: Handle "+" and "-" (lowest precedence)
+    float result = newOperands[0];
+    for (size_t i = 0; i < newOperators.size(); ++i) {
+        result = applyOperator(result, newOperands[i + 1], newOperators[i], isValid);
+        if (!isValid) return 0;
+    }
+
+    return result;
+}
+
+// Function to parse and evaluate an expression with parentheses
+float evaluateExpression(string& expression, bool &isValid) {
+    size_t start, end;
+
+    while ((start = expression.find_last_of('(')) != string::npos) {
+        end = expression.find(')', start);
+        if (end == string::npos) {
+            isValid = false;
+            return 0;
+        }
+
+        string subExpr = expression.substr(start + 1, end - start - 1);
+        vector<string> tokens;
+        stringstream ss(subExpr);
+        string token;
+
+        while (ss >> token) tokens.push_back(token);
+
+        float result = evaluateSimpleExpression(tokens, isValid);
+        if (!isValid) return 0;
+
+        expression.replace(start, end - start + 1, to_string(result));
+    }
+
+    vector<string> tokens;
+    stringstream ss(expression);
+    string token;
+
+    while (ss >> token) tokens.push_back(token);
+
+    return evaluateSimpleExpression(tokens, isValid);
+}
+
+// Function to validate the input
+bool isValidExpression(const string& expression) {
+    int openParentheses = 0;
+    int operators = 0;
+    int operands = 0;
+    bool previousWasOperator = true;
+
+    stringstream ss(expression);
+    string token;
+
+    while (ss >> token) {
+        if (token == "(") {
+            openParentheses++;
+        } else if (token == ")") {
+            openParentheses--;
+            if (openParentheses < 0) return false;
+        } else if (isNumber(token)) {
+            operands++;
+            previousWasOperator = false;
+        } else {
+            if (previousWasOperator) return false;
+            operators++;
+            previousWasOperator = true;
+        }
+    }
+
+    return openParentheses == 0 && operators <= 3 && operands > operators;
+}
+
+int main() {
+    string input;
+
+    cout << "Enter an expression: ";
+    while (getline(cin, input)) {
+        bool isValid = true;
+
+        if (!isValidExpression(input)) {
+            cout << "Error: Invalid expression\nPlease enter a valid expression: ";
+            continue;
+        }
+
+        float result = evaluateExpression(input, isValid);
+
+        if (!isValid) {
+            cout << "Error: Invalid operation\nPlease enter a valid expression: ";
+            continue;
+        }
+
+        if (floor(result) == result) {
+            cout << static_cast<int>(result) << endl;
+        } else {
+            cout << result << endl;
+        }
+    }
+
+    return 0;
+}
+
+
